@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Love Pixel Game</title>
+  <style>
+    body {
+      margin: 0;
+      background: #87CEEB;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      margin: auto;
+      background: #222;
+      image-rendering: pixelated;
+    }
+    /* Tombol kontrol */
+    .controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 20px;
+    }
+    .btn {
+      width: 60px;
+      height: 60px;
+      background: #444;
+      color: white;
+      font-size: 24px;
+      text-align: center;
+      line-height: 60px;
+      border-radius: 12px;
+      user-select: none;
+    }
+    .btn:active {
+      background: #666;
+    }
+  </style>
+</head>
+<body>
+<canvas id="game" width="320" height="240"></canvas>
+
+<!-- Tombol Kontrol -->
+<div class="controls">
+  <div class="btn" id="left">←</div>
+  <div class="btn" id="jump">⬆</div>
+  <div class="btn" id="right">→</div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let keys = {};
+let gravity = 0.5;
+let ground = 200;
+let level = 0;
+let maxLevel = 5;
+let finished = false;
+
+let player = { x: 20, y: 180, w: 16, h: 16, dx: 0, dy: 0, onGround: false };
+
+// Daftar level
+let levels = [
+  // Level 1
+  { hearts: [{x: 200, y: 180, collected:false}], spikes: [], platforms: [], obstacles: [] },
+
+  // Level 2
+  { hearts: [{x: 260, y: 180, collected:false}], spikes: [{x:120,y:184,w:16,h:16}], platforms: [], obstacles: [] },
+
+  // Level 3 → ada tembok penghalang
+  { hearts: [{x: 150, y: 120, collected:false}], 
+    spikes: [], 
+    platforms: [], 
+    obstacles: [{x:140,y:150,w:40,h:50}] // tembok harus dilompati
+  },
+
+  // Level 4
+  { hearts: [{x: 150, y: 100, collected:false}], 
+    spikes: [{x:200,y:184,w:16,h:16}], 
+    platforms: [{x:80,y:160,w:60,h:8},{x:220,y:140,w:60,h:8}], 
+    obstacles: [] 
+  },
+
+  // Level 5 → diperbaiki
+  { 
+    hearts: [{x: 240, y: 80, collected:false}], // diturunkan biar bisa dijangkau
+    spikes: [
+      {x:40,y:184,w:16,h:16}, 
+      {x:280,y:184,w:16,h:16}, 
+      {x:160,y:184,w:16,h:16}
+    ], 
+    platforms: [
+      {x:60,y:160,w:40,h:8},
+      {x:120,y:120,w:40,h:8},
+      {x:180,y:90,w:40,h:8},
+      {x:220,y:110,w:40,h:8} // platform terakhir dinaikkan biar dekat dengan love
+    ], 
+    obstacles: [
+      {x:140,y:150,w:20,h:50}
+    ] 
+  }
+];
+
+// Kontrol keyboard
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// Kontrol tombol layar
+document.getElementById("left").addEventListener("touchstart", () => keys["ArrowLeft"] = true);
+document.getElementById("left").addEventListener("touchend", () => keys["ArrowLeft"] = false);
+
+document.getElementById("right").addEventListener("touchstart", () => keys["ArrowRight"] = true);
+document.getElementById("right").addEventListener("touchend", () => keys["ArrowRight"] = false);
+
+document.getElementById("jump").addEventListener("touchstart", () => {
+  if (player.onGround) {
+    player.dy = -8;
+    player.onGround = false;
+  }
+});
+
+function resetPlayer() {
+  player.x = 20; 
+  player.y = 180; 
+  player.dx = 0; 
+  player.dy = 0; 
+}
+
+function update() {
+  if (finished) return;
+
+  // Movement
+  if (keys["ArrowLeft"]) player.dx = -2;
+  else if (keys["ArrowRight"]) player.dx = 2;
+  else player.dx = 0;
+
+  if (keys[" "] && player.onGround) {
+    player.dy = -8;
+    player.onGround = false;
+  }
+
+  // Physics
+  player.dy += gravity;
+  player.x += player.dx;
+  player.y += player.dy;
+
+  // Batas map
+  if (player.x < 0) player.x = 0;
+  if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+
+  // Ground collision
+  if (player.y + player.h >= ground) {
+    player.y = ground - player.h;
+    player.dy = 0;
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+
+  let current = levels[level];
+
+  // Platform collision
+  current.platforms.forEach(p => {
+    if (player.x < p.x + p.w &&
+        player.x + player.w > p.x &&
+        player.y + player.h > p.y &&
+        player.y + player.h < p.y + 10 &&
+        player.dy >= 0) {
+      player.y = p.y - player.h;
+      player.dy = 0;
+      player.onGround = true;
+    }
+  });
+
+  // Obstacle collision
+  current.obstacles?.forEach(o => {
+    if (player.x < o.x + o.w &&
+        player.x + player.w > o.x &&
+        player.y < o.y + o.h &&
+        player.y + player.h > o.y) {
+      if (player.dx > 0) player.x = o.x - player.w;
+      if (player.dx < 0) player.x = o.x + o.w;
+      if (player.dy > 0) {
+        player.y = o.y - player.h;
+        player.dy = 0;
+        player.onGround = true;
+      }
+    }
+  });
+
+  // Collect hearts
+  current.hearts.forEach(h => {
+    if (!h.collected &&
+        player.x < h.x + 16 &&
+        player.x + player.w > h.x &&
+        player.y < h.y + 16 &&
+        player.y + player.h > h.y) {
+      h.collected = true;
+    }
+  });
+
+  // Check spikes
+  current.spikes.forEach(s => {
+    if (player.x < s.x + s.w &&
+        player.x + player.w > s.x &&
+        player.y < s.y + s.h &&
+        player.y + player.h > s.y) {
+      resetPlayer(); // kena spike → ulang level
+    }
+  });
+
+  // Kalau semua love sudah diambil → lanjut level
+  if (current.hearts.every(h => h.collected)) {
+    level++;
+    if (level >= maxLevel) {
+      finished = true;
+    } else {
+      resetPlayer();
+    }
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "#444";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Ground
+  ctx.fillStyle = "#228B22";
+  ctx.fillRect(0, ground, canvas.width, canvas.height - ground);
+
+  // Player
+  ctx.fillStyle = "#FFD700";
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+
+  if (!finished) {
+    let current = levels[level];
+    // Hearts
+    current.hearts.forEach(h => {
+      if (!h.collected) {
+        ctx.fillStyle = "red";
+        ctx.fillRect(h.x, h.y, 16, 16);
+      }
+    });
+    // Spikes
+    current.spikes.forEach(s => {
+      ctx.fillStyle = "black";
+      ctx.fillRect(s.x, s.y, s.w, s.h);
+    });
+    // Platforms
+    current.platforms.forEach(p => {
+      ctx.fillStyle = "#888";
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+    });
+    // Obstacles
+    current.obstacles?.forEach(o => {
+      ctx.fillStyle = "#555";
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+    });
+
+    ctx.fillStyle = "white";
+    ctx.font = "12px Arial";
+    ctx.fillText("Level " + (level+1), 10, 20);
+  } else {
+    // Tampilan akhir
+    ctx.fillStyle = "pink";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "red";
+    ctx.font = "30px Arial";
+    ctx.fillText("I ❤️ YOU", 80, 120);
+  }
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+resetPlayer();
+gameLoop();
+</script>
+</body>
+</html>
